@@ -54,3 +54,6 @@ logs/
 # Temporary files
 tmp/
 temp/
+*.zst
+*.pgn
+*.npz
