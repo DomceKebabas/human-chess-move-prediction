@@ -8,7 +8,7 @@ line so you know when to move on. Time estimates are rough, for a beginner.
 
 ---
 
-## Where we are (2026-11-22)
+## Where we are (2026-11-23)
 
 - [x] Real dataset built: `dataset_all.npz`, 831,144 positions from 55,888 games,
       split 80/10/10 by game.
@@ -31,8 +31,8 @@ line so you know when to move on. Time estimates are rough, for a beginner.
       PyCharm *Settings -> Project -> Python Interpreter -> Add Interpreter ->
       Virtualenv*, then in the Terminal tab:
       `python -m pip install python-chess numpy zstandard pytest`
-- [x] Run `python -m pytest`, expect **48 passed** (48 `def test_` functions
-      exist; the README also says 48. Re-check the real number in each new clone).
+- [x] Run `python -m pytest`, expect **75 passed** (was 48 before Phase 3/4 added tests;
+      re-check the real number in each new clone).
 - [x] Decide on the 2700-2899 band (150 positions, 0 in test): **merged into
       one top band "2500+"** for all analysis (`bands.py`; data files unchanged).
 
@@ -60,15 +60,15 @@ the band decision is written down.
       `drafts/pr_description.md` are **not in the repo**. Recover `CLAUDE.md`
       and commit it, or copy the parts you need into this file and remove
       the references.
-- [ ] Add `requirements.txt` (python-chess, numpy, zstandard, pytest; later
-      scikit-learn, torch, matplotlib) and point the README to it.
-- [ ] README for Windows: `.venv\Scripts\activate` (not
-      `source .venv/bin/activate`), plus how to install Stockfish on Windows.
-- [ ] README: say that `make_datasets.py` only passes `--min-clock` on to
-      `build_dataset.py` (`--min-ply`, `--max-per-game` and `--seed` use their
-      defaults), or pass those options on too.
-- [ ] Desktop clone: recreate `.venv`, copy `dataset_all.npz` in, run
-      `python -m pytest` and Baseline 1 once (expect 8.9% / 19.8%).
+- [x] `requirements.txt` added (python-chess, numpy, zstandard, pytest, torch).
+- [x] README for Windows: `.venv\Scripts\activate`, Stockfish download.
+- [x] `make_datasets.py` now passes `--min-ply`, `--max-per-game`,
+      `--min-plies` and `--seed` on to `build_dataset.py` (same defaults, so
+      the existing dataset is unchanged).
+- [x] Desktop clone: `.venv` recreated, `python -m pytest` passes.
+- [ ] Copy `dataset_all.npz` into `ChessProject/` and run Baseline 1 once
+      (expect 8.9% / 19.8%; the refactor was checked to give byte-identical
+      CSVs on a synthetic dataset).
 - [x] (first version) First README: what the project is, how to install, how to run each
       script, filter definitions, limitations, "results figure coming".
 
@@ -82,24 +82,27 @@ the dataset from the README.
 All on the **validation** split. Report top-1 and top-3, per band and overall,
 plus seen vs unseen players. Save each result table as a CSV.
 
-- [ ] **`evaluation.py` first.** Move `summarize`, `log_table` and the CSV
-      writing out of `baseline_most_common.py` so every baseline and model
-      prints the same per-band / overall / seen-vs-unseen tables. Add tests;
-      Baseline 1 must still print 8.9% / 19.8%.
-- [ ] **Baseline 2: Stockfish agreement.** Windows: download the binary from
-      stockfishchess.org and pass its path to
-      `chess.engine.SimpleEngine.popen_uci`. For about 2,000 val positions per
-      band (fixed seed), fixed depth or node limit, MultiPV=3: how often is the
-      human move Stockfish's top move (and in Stockfish's top 3)? Compare in
-      class space with `encode_move`. Cache the engine output to a CSV so
-      Phase 6 can reuse it. Expect agreement to rise with rating; it is the
-      first result that really shows weak vs strong differences.
-- [ ] **Baseline 3: logistic regression** on the flattened board
-      (12x8x8 + 4 castling = 772 numbers), with and without the rating as an
-      extra input. Start on a subset (e.g. 100k positions) so it runs on the laptop.
-- [ ] (optional) Small MLP, same inputs.
-- [ ] One summary table: every baseline x every band (merge the
-      `results_*.csv` files; same columns from `evaluation.py`).
+- [x] **`evaluation.py`**: shared per-band / overall / seen-vs-unseen tables
+      and CSV writing; Baseline 1 uses it (output unchanged).
+- [x] **Baseline 2 code** (`baseline_stockfish.py`): 2,000 val positions per
+      band (fixed seed), depth 12, MultiPV=3, engine output cached in
+      `stockfish_cache_val_d12.csv` (also stores best-move and human-move
+      evaluations for Phase 6). Resumable.
+- [ ] **Run Baseline 2**: download Stockfish for Windows from
+      stockfishchess.org, then
+      `python baseline_stockfish.py dataset_all.npz --engine PATH\TO\stockfish.exe --csv results_stockfish_val.csv`
+      (try `--per-band 100` first to see the speed).
+- [x] **Baseline 3 code**: softmax regression = multinomial logistic
+      regression in PyTorch (`train.py --model linear`, 773 inputs: board +
+      castling + rating). Chosen over scikit-learn: sklearn with ~2,000 move
+      classes is very slow, and this shares legal-move masking with the CNN.
+- [ ] **Run Baseline 3** (laptop CPU is fine):
+      `python train.py dataset_all.npz --model linear --train-limit 100000`
+      and the same with `--no-rating`.
+- [ ] (optional) Small MLP: `python train.py dataset_all.npz --model mlp --train-limit 100000`.
+- [x] Summary table code: `summary_table.py` merges all `results_*_val.csv`.
+- [ ] Run `python summary_table.py results_*_val.csv` and paste the table into
+      the README.
 
 **Done when:** you have a table like "baseline vs band" with at least 3 rows and
 can say in one sentence how accuracy changes with rating.
@@ -108,22 +111,26 @@ can say in one sentence how accuracy changes with rating.
 
 ## Phase 4 - Main model (about 15-25 h)
 
-- [ ] Upload `dataset_all.npz` (54 MB) to Google Drive; open a Colab notebook
-      with a GPU.
-- [ ] Precompute legal moves once: dense masks for all rows would take
-      831k x 4168 bytes, about 3.5 GB, and re-parsing every FEN each epoch is
-      slow. Store per-row legal class indices (from
-      `encoding.legal_move_indices`) in `legal_moves.npz`.
-- [ ] Data loader: boards + castling -> tensor; expand the cached indices to a
-      mask per batch (encoding comes only from `encoding.py`; never copy it).
-- [ ] Small CNN (e.g. 6 conv layers, 64 channels), output `NUM_MOVE_CLASSES`
-      (4168), illegal moves masked out before the softmax.
-- [ ] Rating as input: extra constant plane(s) with the normalised rating
-      (or a band embedding).
-- [ ] Tests: output shape is (batch, 4168); a masked illegal move always gets
-      probability 0; the model can overfit 100 positions (sanity check).
-- [ ] Train with early stopping on validation loss; save the best checkpoint.
-- [ ] Report val top-1/top-3 per band, seen vs unseen players.
+- [x] Legal-move cache (`legal_cache.py`): per-row legal class indices in
+      `dataset_all_legal.npz` (~60 MB instead of ~3.5 GB of dense masks), with
+      a fingerprint check so it can't be used with the wrong dataset. Built
+      automatically the first time `train.py` runs.
+- [x] Batch loader (`move_batches.py`): boards + castling + normalised rating
+      + legal mask per batch. `--no-rating` feeds a constant 0, same model.
+- [x] CNN (`models.py`): 17 input planes (12 pieces + 4 castling + 1 rating),
+      stem + 3 residual blocks (6 conv layers) x 64 channels, policy head to
+      4168 logits, illegal moves set to -inf before the softmax.
+- [x] Tests (`test_models.py`): output shape (batch, 4168), illegal moves get
+      probability exactly 0, rating changes the output, overfits 100
+      positions, `train.py` end to end.
+- [x] Training (`train.py`): AdamW, LR halved on plateau, early stopping on
+      val loss, best checkpoint in `checkpoints/<name>.pt`; final per-band +
+      seen/unseen report. `evaluate_model.py` re-evaluates a checkpoint.
+- [ ] Colab run: upload `dataset_all.npz` (54 MB) to Google Drive, then (see
+      README "Training on Colab") `python train.py dataset_all.npz --model cnn`
+      and `--model cnn --no-rating`. Download `checkpoints/` and the
+      `results_*_val.csv` files.
+- [ ] Add the CNN rows to the summary table / README.
 
 **Done when:** the CNN clearly beats all baselines on val and the numbers are
 saved.
