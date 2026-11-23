@@ -31,8 +31,8 @@ line so you know when to move on. Time estimates are rough, for a beginner.
       PyCharm *Settings -> Project -> Python Interpreter -> Add Interpreter ->
       Virtualenv*, then in the Terminal tab:
       `python -m pip install python-chess numpy zstandard pytest`
-- [x] Run `python -m pytest`, expect **47 passed** (fewer if only the
-      Downloads copy could be restored; write down the real number).
+- [x] Run `python -m pytest`, expect **48 passed** (48 `def test_` functions
+      exist; the README also says 48. Re-check the real number in each new clone).
 - [x] Decide on the 2700-2899 band (150 positions, 0 in test): **merged into
       one top band "2500+"** for all analysis (`bands.py`; data files unchanged).
 
@@ -54,7 +54,21 @@ the band decision is written down.
 - [x] (draft in `drafts/pr_description.md`, fill in scan time) Write the PR description with: scan time, games and positions per band,
       split sizes, overlap report, baseline 1 table.
 - [ ] Reply to each review thread (resolved / decided / open), using the table
-      in `CLAUDE.md` section 5.
+      in `CLAUDE.md` section 5. PR #1 is already merged; reply on it anyway so
+      the reviewer sees the decisions.
+- [ ] `CLAUDE.md` (cited here in sections 5 and 7) and
+      `drafts/pr_description.md` are **not in the repo**. Recover `CLAUDE.md`
+      and commit it, or copy the parts you need into this file and remove
+      the references.
+- [ ] Add `requirements.txt` (python-chess, numpy, zstandard, pytest; later
+      scikit-learn, torch, matplotlib) and point the README to it.
+- [ ] README for Windows: `.venv\Scripts\activate` (not
+      `source .venv/bin/activate`), plus how to install Stockfish on Windows.
+- [ ] README: say that `make_datasets.py` only passes `--min-clock` on to
+      `build_dataset.py` (`--min-ply`, `--max-per-game` and `--seed` use their
+      defaults), or pass those options on too.
+- [ ] Desktop clone: recreate `.venv`, copy `dataset_all.npz` in, run
+      `python -m pytest` and Baseline 1 once (expect 8.9% / 19.8%).
 - [x] (first version) First README: what the project is, how to install, how to run each
       script, filter definitions, limitations, "results figure coming".
 
@@ -68,15 +82,24 @@ the dataset from the README.
 All on the **validation** split. Report top-1 and top-3, per band and overall,
 plus seen vs unseen players. Save each result table as a CSV.
 
-- [ ] **Baseline 2: Stockfish agreement.** `brew install stockfish`. For about
-      2,000 val positions per band, how often is the human move Stockfish's top
-      move (and in Stockfish's top 3)? Expect this to rise with rating; it is
-      the first result that really shows weak vs strong differences.
+- [ ] **`evaluation.py` first.** Move `summarize`, `log_table` and the CSV
+      writing out of `baseline_most_common.py` so every baseline and model
+      prints the same per-band / overall / seen-vs-unseen tables. Add tests;
+      Baseline 1 must still print 8.9% / 19.8%.
+- [ ] **Baseline 2: Stockfish agreement.** Windows: download the binary from
+      stockfishchess.org and pass its path to
+      `chess.engine.SimpleEngine.popen_uci`. For about 2,000 val positions per
+      band (fixed seed), fixed depth or node limit, MultiPV=3: how often is the
+      human move Stockfish's top move (and in Stockfish's top 3)? Compare in
+      class space with `encode_move`. Cache the engine output to a CSV so
+      Phase 6 can reuse it. Expect agreement to rise with rating; it is the
+      first result that really shows weak vs strong differences.
 - [ ] **Baseline 3: logistic regression** on the flattened board
       (12x8x8 + 4 castling = 772 numbers), with and without the rating as an
       extra input. Start on a subset (e.g. 100k positions) so it runs on the laptop.
 - [ ] (optional) Small MLP, same inputs.
-- [ ] One summary table: every baseline x every band.
+- [ ] One summary table: every baseline x every band (merge the
+      `results_*.csv` files; same columns from `evaluation.py`).
 
 **Done when:** you have a table like "baseline vs band" with at least 3 rows and
 can say in one sentence how accuracy changes with rating.
@@ -87,8 +110,12 @@ can say in one sentence how accuracy changes with rating.
 
 - [ ] Upload `dataset_all.npz` (54 MB) to Google Drive; open a Colab notebook
       with a GPU.
-- [ ] Data loader: boards + castling -> tensor; legal mask from
-      `encoding.legal_mask(fen)` (import from `encoding.py`, never copy it).
+- [ ] Precompute legal moves once: dense masks for all rows would take
+      831k x 4168 bytes, about 3.5 GB, and re-parsing every FEN each epoch is
+      slow. Store per-row legal class indices (from
+      `encoding.legal_move_indices`) in `legal_moves.npz`.
+- [ ] Data loader: boards + castling -> tensor; expand the cached indices to a
+      mask per batch (encoding comes only from `encoding.py`; never copy it).
 - [ ] Small CNN (e.g. 6 conv layers, 64 channels), output `NUM_MOVE_CLASSES`
       (4168), illegal moves masked out before the softmax.
 - [ ] Rating as input: extra constant plane(s) with the normalised rating
