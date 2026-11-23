@@ -1,0 +1,8 @@
+# Data pipeline and baseline 1
+python-chess>=1.11
+numpy>=2.0
+zstandard>=0.23
+pytest>=8.0
+
+# Baseline 3 and the CNN (train.py). On Colab torch is already installed.
+torch>=2.5
