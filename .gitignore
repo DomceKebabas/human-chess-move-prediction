@@ -54,3 +54,16 @@ logs/
 # Temporary files
 tmp/
 temp/
+*.zst
+*.pgn
+*.npz
+
+# Chess data: large, contains usernames, rebuilt with make_datasets.py
+*.pgn
+*.pgn.zst
+*.npz
+
+# Generated results and local drafts
+results_*.csv
+drafts/
+.venv_old/
