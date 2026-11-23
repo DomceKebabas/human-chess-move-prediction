@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 import zstandard as zstd
 
-from make_datasets import check_bands, generate_bands, parse_bands, sample_into_bands
+from make_datasets import build_dataset_command, check_bands, generate_bands, parse_bands, sample_into_bands
 from test_filters import make_game
 
 
@@ -45,3 +45,18 @@ def test_sample_into_bands_assigns_games_to_the_right_band(tmp_path):
     assert (tmp_path / "filtered_1000-1199.pgn").exists()
     assert not (tmp_path / "filtered_1200-1399.pgn").exists()   # empty bands write no file
     assert (tmp_path / "filtered_1400-1599.pgn").read_text().count("[Event ") == 2
+
+
+def test_build_dataset_command_passes_position_options_on():
+    args = SimpleNamespace(min_clock=0.0, min_ply=4, max_per_game=7, min_plies=30, seed=3)
+    command = build_dataset_command("in.pgn", "out.npz", 12, args)
+
+    def value(flag):
+        return command[command.index(flag) + 1]
+
+    assert value("--max-games") == "12"
+    assert value("--min-clock") == "0.0"
+    assert value("--min-ply") == "4"
+    assert value("--max-per-game") == "7"
+    assert value("--min-game-plies") == "30"
+    assert value("--seed") == "3"

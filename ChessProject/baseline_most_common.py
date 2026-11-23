@@ -23,16 +23,16 @@ Usage (Terminal tab, in the project folder):
     python baseline_most_common.py dataset_all.npz --csv results_most_common_val.csv
 """
 import argparse
-import csv
 import logging
 from collections import Counter, defaultdict
 
 import chess
 import numpy as np
 
-from bands import BAND_WIDTH, MIN_RATING, TOP_BAND_START, band_label, band_of
-from common import add_logging_args, setup_logging
+from bands import BAND_WIDTH, MIN_RATING, TOP_BAND_START
+from common import add_logging_args, load_dataset, setup_logging
 from encoding import legal_move_indices
+from evaluation import bands_of, log_table, report, summarize, train_players
 from splits import TEST, TRAIN, VAL, position_key
 
 log = logging.getLogger(__name__)
@@ -88,14 +88,14 @@ def evaluate(data, split_code, k=3, min_rating=MIN_RATING, band_width=BAND_WIDTH
     moves = data["moves"].tolist()
     players = data["players"].tolist()
     keys = [position_key(fen) for fen in fens]
-    bands = [band_of(int(r), min_rating, band_width, top_band_start) for r in data["ratings"].tolist()]
+    bands = bands_of(data["ratings"], min_rating, band_width, top_band_start)
 
     train_rows = np.flatnonzero(split == TRAIN)
     position_counts = count_moves([keys[i] for i in train_rows], [moves[i] for i in train_rows])
     band_position_counts = count_moves([(bands[i], keys[i]) for i in train_rows],
                                        [moves[i] for i in train_rows])
     overall_counts = Counter(moves[i] for i in train_rows)
-    train_players = set(data["players"][train_rows].tolist()) | set(data["opponents"][train_rows].tolist())
+    seen_players = train_players(data)
     log.info("Fitted on %d train positions (%d distinct positions)", len(train_rows), len(position_counts))
 
     results = []
@@ -107,47 +107,13 @@ def evaluate(data, split_code, k=3, min_rating=MIN_RATING, band_width=BAND_WIDTH
         results.append({
             "band": bands[i],
             "seen_position": same_position is not None,
-            "seen_player": players[i] in train_players,
+            "seen_player": players[i] in seen_players,
             "all_top1": moves[i] == guesses_all[0],
             "all_topk": moves[i] in guesses_all,
             "band_top1": moves[i] == guesses_band[0],
             "band_topk": moves[i] in guesses_band,
         })
     return results
-
-
-def summarize(results, group_of):
-    """Group the rows and turn the True/False columns into percentages."""
-    groups = defaultdict(list)
-    for row in results:
-        groups[group_of(row)].append(row)
-    table = []
-    for name in sorted(groups, key=str):
-        rows = groups[name]
-        n = len(rows)
-        table.append({
-            "group": name,
-            "positions": n,
-            "seen_position_pct": 100.0 * sum(r["seen_position"] for r in rows) / n,
-            "all_top1_pct": 100.0 * sum(r["all_top1"] for r in rows) / n,
-            "all_topk_pct": 100.0 * sum(r["all_topk"] for r in rows) / n,
-            "band_top1_pct": 100.0 * sum(r["band_top1"] for r in rows) / n,
-            "band_topk_pct": 100.0 * sum(r["band_topk"] for r in rows) / n,
-        })
-    return table
-
-
-def log_table(title, table, k):
-    log.info("")
-    log.info(title)
-    log.info("  %-14s %9s %8s | %-15s | %-15s", "", "", "pos seen", "all-ratings", "by-band")
-    log.info("  %-14s %9s %8s | %7s %7s | %7s %7s", "group", "positions", "in train",
-             "top-1", f"top-{k}", "top-1", f"top-{k}")
-    for row in table:
-        log.info("  %-14s %9d %7.1f%% | %6.1f%% %6.1f%% | %6.1f%% %6.1f%%",
-                 row["group"], row["positions"], row["seen_position_pct"],
-                 row["all_top1_pct"], row["all_topk_pct"],
-                 row["band_top1_pct"], row["band_topk_pct"])
 
 
 def main():
@@ -165,28 +131,15 @@ def main():
     args = parser.parse_args()
     setup_logging(args.log_file, args.quiet)
 
-    loaded = np.load(args.dataset)
-    data = {key: loaded[key] for key in loaded.files}
+    data = load_dataset(args.dataset)
     results = evaluate(data, SPLIT_CODES[args.split], args.k, args.min_rating, args.band_width,
                        args.top_band_start)
 
-    by_band = summarize(results, lambda r: r["band"])
-    by_band.sort(key=lambda row: row["group"])
-    for row in by_band:
-        row["group"] = band_label(row["group"], args.band_width, args.top_band_start)
-    overall = summarize(results, lambda r: "all")
-    log_table(f"Most-common-move baseline on {args.split} ({len(results)} positions)", by_band + overall, args.k)
-    log_table("By player (seen = the mover also plays in train games)",
-              summarize(results, lambda r: "seen player" if r["seen_player"] else "unseen player"), args.k)
+    # Columns: all_* = counts from all ratings, band_* = same rating band first.
+    report(results, f"Most-common-move baseline on {args.split} (k={args.k})", args.csv,
+           args.band_width, args.top_band_start)
     log_table("By position (seen = this exact position occurs in train)",
-              summarize(results, lambda r: "seen position" if r["seen_position"] else "new position"), args.k)
-
-    if args.csv:
-        with open(args.csv, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(by_band[0].keys()))
-            writer.writeheader()
-            writer.writerows(by_band + overall)
-        log.info("Saved per-band table to %s", args.csv)
+              summarize(results, lambda r: "seen position" if r["seen_position"] else "new position"))
 
 
 if __name__ == "__main__":

@@ -1,6 +1,14 @@
-"""Small shared helper: logging setup (replaces print)."""
+"""Small shared helpers: logging setup (replaces print) and dataset loading."""
 import logging
 import sys
+
+import numpy as np
+
+
+def load_dataset(path):
+    """Load a dataset .npz fully into memory as a plain dict of arrays."""
+    with np.load(path) as loaded:
+        return {key: loaded[key] for key in loaded.files}
 
 
 def setup_logging(log_file=None, quiet=False):

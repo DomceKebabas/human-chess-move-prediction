@@ -140,11 +140,22 @@ def sample_into_bands(path, bands, args, output_dir=HERE):
     return names, [len(r) for r in reservoirs]
 
 
+def build_dataset_command(source, output, num_games, args):
+    """Command line for build_dataset.py; every position-level option is passed on."""
+    return [sys.executable, str(HERE / "build_dataset.py"), str(source), str(output),
+            "--max-games", str(num_games),
+            "--min-clock", str(args.min_clock),
+            "--min-ply", str(args.min_ply),
+            "--max-per-game", str(args.max_per_game),
+            "--min-game-plies", str(args.min_plies),
+            "--seed", str(args.seed),
+            "--quiet"]
+
+
 def build_band(name, num_games, args):
     source = HERE / f"filtered_{name}.pgn"
     output = HERE / f"dataset_{name}.npz"
-    command = [sys.executable, str(HERE / "build_dataset.py"), str(source), str(output),
-               "--max-games", str(num_games), "--min-clock", str(args.min_clock), "--quiet"]
+    command = build_dataset_command(source, output, num_games, args)
     result = subprocess.run(command)
     if result.returncode != 0 or not output.exists():
         log.info("  band %s: no positions produced", name)
@@ -173,8 +184,14 @@ def main():
     parser.add_argument("--games-per-band", type=int, default=5000)
     parser.add_argument("--max-diff", type=int, default=100)
     parser.add_argument("--min-plies", type=int, default=20)
-    parser.add_argument("--min-clock", type=float, default=30.0)
-    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--min-clock", type=float, default=30.0,
+                        help="skip moves with fewer seconds left (passed to build_dataset.py)")
+    parser.add_argument("--min-ply", type=int, default=10,
+                        help="skip the first N plies of each game (passed to build_dataset.py)")
+    parser.add_argument("--max-per-game", type=int, default=15,
+                        help="keep at most N positions per game (passed to build_dataset.py)")
+    parser.add_argument("--seed", type=int, default=0,
+                        help="random seed for game sampling and position sampling")
     parser.add_argument("--max-scan-games", type=int, default=0,
                         help="stop after scanning this many games (0 = whole file)")
     add_logging_args(parser)

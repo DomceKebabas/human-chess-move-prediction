@@ -67,3 +67,4 @@ temp/
 results_*.csv
 drafts/
 .venv_old/
+stockfish_cache_*.csv
